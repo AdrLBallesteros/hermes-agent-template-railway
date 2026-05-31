@@ -69,6 +69,7 @@ rm -f "$CHROME_USER_DATA_DIR/SingletonLock" \
   --no-first-run \
   --no-default-browser-check \
   about:blank &
+  
 
 echo "Waiting for Chromium CDP at $BU_CDP_URL..."
 
