@@ -35,4 +35,45 @@ fi
 # container), so removing the file unconditionally is safe.
 rm -f /data/.hermes/gateway.pid
 
+# Start Chromium for browser-harness before starting the app.
+echo "Starting Chromium for browser-harness..."
+
+export BU_CDP_URL="${BU_CDP_URL:-http://127.0.0.1:9222}"
+export CHROME_USER_DATA_DIR="${CHROME_USER_DATA_DIR:-/data/.browser-harness-profile}"
+
+CHROME_BIN="$(command -v chromium || command -v chromium-browser || command -v google-chrome || true)"
+
+if [ -z "$CHROME_BIN" ]; then
+  echo "ERROR: Chromium/Chrome not found. Check RAILPACK_DEPLOY_APT_PACKAGES."
+  exit 1
+fi
+
+mkdir -p "$CHROME_USER_DATA_DIR"
+
+"$CHROME_BIN" \
+  --headless=new \
+  --remote-debugging-address=127.0.0.1 \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$CHROME_USER_DATA_DIR" \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --no-first-run \
+  --no-default-browser-check \
+  about:blank &
+
+echo "Waiting for Chromium CDP at $BU_CDP_URL..."
+
+for i in {1..30}; do
+  if curl -fsS "$BU_CDP_URL/json/version" >/dev/null; then
+    echo "Chromium CDP is ready"
+    break
+  fi
+  sleep 1
+done
+
+if ! curl -fsS "$BU_CDP_URL/json/version" >/dev/null; then
+  echo "ERROR: Chromium CDP did not start"
+  exit 1
+fi
+
 exec python /app/server.py
