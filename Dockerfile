@@ -17,17 +17,29 @@ ARG HERMES_REF=v2026.5.16
 # allocate memory" and the container dies. tini reaps zombies in the
 # background and forwards SIGTERM/SIGINT to our entrypoint so Railway's
 # stop signal still triggers our graceful shutdown. Standard container init
-# (same as Docker's `--init` flag and Kubernetes' pause container).
+# same as Docker's `--init` flag and Kubernetes' pause container.
 #
 # Node.js is required only at build time to compile the Hermes React dashboard.
-# We strip the source + apt lists afterwards to keep the image lean.
+# Chromium is required at runtime so browser-harness can connect through CDP
+# at http://127.0.0.1:9222.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates git tini && \
+    apt-get install -y --no-install-recommends \
+      curl \
+      ca-certificates \
+      git \
+      tini \
+      chromium \
+      fonts-liberation \
+      libnss3 \
+      libxss1 \
+      libatk-bridge2.0-0 \
+      libgtk-3-0 \
+      libasound2 && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install hermes-agent (provides the `hermes` CLI) and pre-build its React
+# Install hermes-agent provides the `hermes` CLI and pre-build its React
 # dashboard so `hermes dashboard` has nothing to build at runtime.
 #
 # [all] in v2026.5.16: cron, cli, dev, pty, mcp, homeassistant, sms, acp,
@@ -47,17 +59,17 @@ RUN git clone --depth 1 --branch ${HERMES_REF} https://github.com/NousResearch/h
     npm run build && \
     rm -rf /opt/hermes-agent/web /opt/hermes-agent/.git /root/.npm
 
-# Why pre-build ui-tui (and why we don't delete it after):
+# Why pre-build ui-tui and why we don't delete it after:
 # - The dashboard's embedded Chat tab spawns `node ui-tui/dist/entry.js`
 #   on every WebSocket connect to /api/pty.
 # - Without HERMES_TUI_DIR, hermes's _make_tui_argv falls through to the
-#   npm install + build path (since git-editable installs don't have the
-#   bundled tui_dist/ that PyPI wheels include), adding 30-60s to the
+#   npm install + build path since git-editable installs don't have the
+#   bundled tui_dist/ that PyPI wheels include, adding 30-60s to the
 #   first chat-open and blocking the asyncio event loop.
 # - Pre-building at image time surfaces build failures here rather than
 #   at user request time, and makes first-chat-open instant.
-# - We keep ui-tui/ entirely (node_modules + dist + src) so HERMES_TUI_DIR
-#   can point at it (see below).
+# - We keep ui-tui/ entirely node_modules + dist + src so HERMES_TUI_DIR
+#   can point at it.
 
 COPY requirements.txt /app/requirements.txt
 RUN uv pip install --system --no-cache -r /app/requirements.txt
@@ -72,9 +84,14 @@ RUN chmod +x /app/start.sh
 ENV HOME=/data
 ENV HERMES_HOME=/data/.hermes
 
+# Browser-harness / Chromium CDP defaults.
+# These can still be overridden from Railway Variables if needed.
+ENV BU_CDP_URL=http://127.0.0.1:9222
+ENV CHROME_USER_DATA_DIR=/data/.browser-harness-profile
+
 # Points hermes at our pre-built TUI bundle. hermes's _make_tui_argv checks
 # HERMES_TUI_DIR first: if dist/entry.js exists there, it skips the npm
-# install/build entirely. This is the official packager path (Nix uses it too)
+# install/build entirely. This is the official packager path Nix uses it too
 # and avoids the 30-60s npm bootstrap that git-editable installs would otherwise
 # trigger on first /chat connection.
 ENV HERMES_TUI_DIR=/opt/hermes-agent/ui-tui
