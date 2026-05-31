@@ -44,11 +44,20 @@ export CHROME_USER_DATA_DIR="${CHROME_USER_DATA_DIR:-/data/.browser-harness-prof
 CHROME_BIN="$(command -v chromium || command -v chromium-browser || command -v google-chrome || true)"
 
 if [ -z "$CHROME_BIN" ]; then
-  echo "ERROR: Chromium/Chrome not found. Check RAILPACK_DEPLOY_APT_PACKAGES."
+  echo "ERROR: Chromium/Chrome not found. Check Dockerfile apt-get install chromium."
   exit 1
 fi
 
 mkdir -p "$CHROME_USER_DATA_DIR"
+
+# Remove stale Chromium profile locks from previous Railway containers.
+# These files can remain in the persistent volume and make Chromium think
+# the profile is already in use, preventing it from starting.
+echo "Removing stale Chromium lock files from $CHROME_USER_DATA_DIR..."
+
+rm -f "$CHROME_USER_DATA_DIR/SingletonLock" \
+      "$CHROME_USER_DATA_DIR/SingletonCookie" \
+      "$CHROME_USER_DATA_DIR/SingletonSocket"
 
 "$CHROME_BIN" \
   --headless=new \
